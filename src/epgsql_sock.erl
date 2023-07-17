@@ -474,18 +474,31 @@ activate_socket(State) ->
 %% This one only used in connection initiation to send client's
 %% `StartupMessage' and `SSLRequest' packets
 -spec send(pg_sock(), iodata()) -> ok | {error, any()}.
-send(#state{mod = Mod, sock = Sock}, Data) ->
-    do_send(Mod, Sock, epgsql_wire:encode_command(Data)).
+send(State = #state{mod = Mod, sock = Sock}, Data) ->
+  case do_send(Mod, Sock, epgsql_wire:encode_command(Data)) of
+    ok -> ok;
+    {error, Reason} ->
+      throw({stop, {error, Reason}, flush_queue(State#state{sock = undefined}, {error, Reason}) })
+  end.
 
 -spec send(pg_sock(), epgsql_wire:packet_type(), iodata()) -> ok | {error, any()}.
-send(#state{mod = Mod, sock = Sock}, Type, Data) ->
-    do_send(Mod, Sock, epgsql_wire:encode_command(Type, Data)).
+send(State = #state{mod = Mod, sock = Sock}, Type, Data) ->
+  case do_send(Mod, Sock, epgsql_wire:encode_command(Type, Data)) of
+    ok -> ok;
+    {error, Reason} ->
+      throw({stop, {error, Reason}, flush_queue(State#state{sock = undefined}, {error, Reason}) })
+  end.
 
 -spec send_multi(pg_sock(), [{epgsql_wire:packet_type(), iodata()}]) -> ok | {error, any()}.
-send_multi(#state{mod = Mod, sock = Sock}, List) ->
-    do_send(Mod, Sock, lists:map(fun({Type, Data}) ->
-                                    epgsql_wire:encode_command(Type, Data)
-                                 end, List)).
+send_multi(State = #state{mod = Mod, sock = Sock}, List) ->
+  case do_send(Mod, Sock, lists:map(fun({Type, Data}) ->
+    epgsql_wire:encode_command(Type, Data)
+                                    end, List))
+  of
+    ok -> ok;
+    {error, Reason} ->
+      throw({stop, {error, Reason}, flush_queue(State#state{sock = undefined}, {error, Reason}) })
+  end.
 
 do_send(gen_tcp, Sock, Bin) ->
     gen_tcp_send(Sock, Bin);
