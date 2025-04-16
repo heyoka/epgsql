@@ -56,7 +56,10 @@
          get_backend_pid/1,
          activate/1]).
 
--export([handle_call/3, handle_cast/2, handle_info/2, format_status/1, format_status/2]).
+-export([handle_call/3, handle_cast/2, handle_info/2, format_status/1]).
+-if(?OTP_RELEASE < 27).
+-export([format_status/2]).
+-endif.
 -export([init/1, code_change/3, terminate/2]).
 
 %% loop callback
@@ -329,6 +332,7 @@ format_status(Status = #{reason := _Reason, state := State}) ->
 format_status(Status) ->
     Status.
 
+-if(?OTP_RELEASE < 27).
 %% TODO
 %% This is deprecated since OTP-25 in favor of `format_status/1`. Remove once
 %% OTP-25 becomes minimum supported OTP version.
@@ -338,6 +342,7 @@ format_status(terminate, [_PDict, State]) ->
   %% Do not format the rows attribute when process terminates abnormally
   %% but allow it when is a sys:get_status/1.2
   redact_state(State).
+-endif.
 
 %% -- internal functions --
 -spec handle_socket_pasive(pg_sock()) -> pg_sock().
@@ -673,8 +678,8 @@ handle_copy_send_rows(_, _, #copy{format = Format}, _) when Format =/= binary ->
 handle_copy_send_rows(_, _, #copy{last_error = LastError}, _) when LastError =/= undefined ->
     %% server already reported error in data stream asynchronously
     {error, LastError};
-handle_copy_send_rows(Rows, _, #copy{binary_types = Types}, State) ->
-    Data = [epgsql_wire:encode_copy_row(Values, Types, get_codec(State))
+handle_copy_send_rows(Rows, _, #copy{binary_encoder = Encoder}, State) ->
+    Data = [epgsql_wire:encode_copy_row_with_encoder(Values, Encoder, get_codec(State))
             || Values <- Rows],
     ok = send(State, ?COPY_DATA, Data).
 

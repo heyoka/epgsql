@@ -74,6 +74,7 @@ groups() ->
             range8_type,
             date_time_range_type,
             custom_types,
+            unknown_type,
             custom_null
         ]},
         {pipelining, [parallel], [
@@ -106,6 +107,7 @@ groups() ->
         execute_batch,
         execute_batch_3_named_stmt,
         execute_batch_3_unnamed_stmt,
+        execute_batch_3_unknown_types,
         execute_batch_3_sql,
         batch_error,
         single_batch,
@@ -578,6 +580,16 @@ execute_batch_3_sql(Config) ->
            Module:execute_batch(C, "select $1::integer + $2::integer", [[1, 2], [3, 4]]))
     end).
 
+execute_batch_3_unknown_types(Config) ->
+    Module = ?config(module, Config),
+    epgsql_ct:with_connection(Config, fun(C) ->
+        ?assertMatch(
+           {[#column{type = {unknown_oid, _}, _ = _}, #column{type = int4, _ = _}],
+            [{ok, [{<<"ALPHA">>, 1}]}, {ok, [{<<"BRAVO">>, 2}]}, {ok, [{null, null}]}]},
+           Module:execute_batch(C, "select $1::test_enum1, $2::integer",
+                                [[<<"ALPHA">>, 1], [<<"BRAVO">>, 2], [null, null]]))
+    end).
+
 batch_error(Config) ->
     Module = ?config(module, Config),
     epgsql_ct:with_rollback(Config, fun(C) ->
@@ -612,8 +624,8 @@ extended_select(Config) ->
 extended_sync_ok(Config) ->
     Module = ?config(module, Config),
     epgsql_ct:with_connection(Config, fun(C) ->
-        {ok, _Cols, [{<<"one">>}]} = Module:equery(C, "select value from test_table1 where id = $1", [1]),
-        {ok, _Cols, [{<<"two">>}]} = Module:equery(C, "select value from test_table1 where id = $1", [2])
+        {ok, Cols, [{<<"one">>}]} = Module:equery(C, "select value from test_table1 where id = $1", [1]),
+        {ok, Cols, [{<<"two">>}]} = Module:equery(C, "select value from test_table1 where id = $1", [2])
     end).
 
 extended_sync_error(Config) ->
@@ -654,7 +666,8 @@ parse(Config) ->
     Module = ?config(module, Config),
     epgsql_ct:with_connection(Config, fun(C) ->
         {ok, S} = Module:parse(C, "select * from test_table1"),
-        [#column{name = <<"id">>}, #column{name = <<"value">>}] = S#statement.columns,
+        [#column{name = <<"id">>, type = int4},
+         #column{name = <<"value">>, type = text}] = S#statement.columns,
         ok = Module:close(C, S),
         ok = Module:sync(C)
     end).
@@ -885,10 +898,10 @@ parameter_set(Config) ->
     epgsql_ct:with_connection(Config, fun(C) ->
         {ok, [], []} = Module:squery(C, "set DateStyle = 'ISO, MDY'"),
         {ok, <<"ISO, MDY">>} = Module:get_parameter(C, "DateStyle"),
-        {ok, _Cols, [{<<"2000-01-02">>}]} = Module:squery(C, "select '2000-01-02'::date"),
+        {ok, Cols, [{<<"2000-01-02">>}]} = Module:squery(C, "select '2000-01-02'::date"),
         {ok, [], []} = Module:squery(C, "set DateStyle = 'German'"),
         {ok, <<"German, DMY">>} = Module:get_parameter(C, "DateStyle"),
-        {ok, _Cols, [{<<"02.01.2000">>}]} = Module:squery(C, "select '2000-01-02'::date")
+        {ok, Cols, [{<<"02.01.2000">>}]} = Module:squery(C, "select '2000-01-02'::date")
     end).
 
 numeric_type(Config) ->
@@ -1180,6 +1193,18 @@ custom_types(Config) ->
         ok = Module:bind(C, S, [bar]),
         {ok, 1} = Module:execute(C, S),
         ?assertMatch({ok, _, [{bar}]}, Module:equery(C, "SELECT col FROM t_foo"))
+    end).
+
+%% @doc pg type epgsql doesn't know how to decode
+unknown_type(Config) ->
+    Module = ?config(module, Config),
+    epgsql_ct:with_connection(Config, fun(C) ->
+        Select = fun(Sql, Params, Expected) ->
+            {ok, _Columns, [{Val}]} = Module:equery(C, Sql, Params),
+            ?assertMatch(Expected, Val)
+        end,
+        Select("SELECT 'ALPHA'::test_enum1", [], <<"ALPHA">>),
+        Select("SELECT $1::test_enum1", [<<"BRAVO">>], <<"BRAVO">>)
     end).
 
 custom_null(Config) ->

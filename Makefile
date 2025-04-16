@@ -1,13 +1,15 @@
 REBAR = rebar3
-MINIMAL_COVERAGE = 55
+MINIMAL_COVERAGE = 65
 
 all: compile
 
 compile: src/epgsql_errcodes.erl
 	@$(REBAR) compile
 
-clean:
+clean: $(REBAR) clean_doc
 	@$(REBAR) clean
+
+clean_doc:
 	@rm -f doc/*.html
 	@rm -f doc/erlang.png
 	@rm -f doc/stylesheet.css
